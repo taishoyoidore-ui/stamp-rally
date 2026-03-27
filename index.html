@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>大正酔いどれ</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; background-color: #f0f0f0; margin: 0; padding: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; max-width: 400px; margin: 20px auto; }
+        .stamp { width: 100%; aspect-ratio: 1; background: white; border: 2px solid #ccc; display: flex; align-items: center; justify-content: center; font-size: 12px; position: relative; border-radius: 8px; }
+        .checked { background-color: #ffeb3b; border-color: #fbc02d; }
+        .checked::after { content: "✓"; font-size: 30px; color: #e91e63; position: absolute; font-weight: bold; }
+        #status { margin-top: 20px; font-weight: bold; color: #333; min-height: 1.5em; }
+        .loading { color: #666; }
+    </style>
+</head>
+<body>
+    <h2>飲み歩き強化チェック</h2>
+    <div id="status">読み込み中...</div>
+    <div class="grid" id="stamp-grid"></div>
+
+    <script>
+        // ★★★ここにあなたのGASのデプロイURLを貼り付けてください★★★
+        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzWVTFSBMK9AxckUC-VIEUtn-KHBqq8lvfbudFf2ePqdqgfaw1In_vj5LzNWCHJVuWo2A/exec";
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const shopId = urlParams.get('shop'); // URLから ?shop=s01 を取得
+
+        // ユーザー識別用のIDを作成（ブラウザに保存）
+        let userId = localStorage.getItem('stamp_user_id');
+        if (!userId) {
+            userId = 'U' + Math.random().toString(36).substring(2, 11);
+            localStorage.setItem('stamp_user_id', userId);
+        }
+
+        // 初期表示：32個のマスを作る
+        const grid = document.getElementById('stamp-grid');
+        for (let i = 1; i <= 32; i++) {
+            const id = 's' + String(i).padStart(2, '0');
+            const div = document.createElement('div');
+            div.id = id;
+            div.className = 'stamp';
+            div.innerText = id;
+            grid.appendChild(div);
+        }
+
+        // データのやり取り（GASへ送信）
+        async function syncData() {
+            try {
+                const response = await fetch(GAS_WEB_APP_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        userId: userId,
+                        shopId: shopId // URLにパラメータがあれば送信
+                    })
+                });
+                const data = await response.json();
+                
+                // スタンプを反映
+                data.checkedShops.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.classList.add('checked');
+                });
+
+                if (shopId) {
+                    document.getElementById('status').innerText = shopId + " のスタンプを押しました！";
+                    // URLからパラメータを消してスッキリさせる（二重送信防止）
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                } else {
+                    document.getElementById('status').innerText = "あなたのスタンプ状況です";
+                }
+            } catch (e) {
+                document.getElementById('status').innerText = "エラー: 接続できませんでした。";
+                console.error(e);
+            }
+        }
+
+        syncData();
+    </script>
+</body>
+</html>
