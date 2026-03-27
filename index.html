@@ -1,81 +1,115 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>大正酔いどれ</title>
-    <style>
-        body { font-family: sans-serif; text-align: center; background-color: #f0f0f0; margin: 0; padding: 20px; }
-        .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; max-width: 400px; margin: 20px auto; }
-        .stamp { width: 100%; aspect-ratio: 1; background: white; border: 2px solid #ccc; display: flex; align-items: center; justify-content: center; font-size: 12px; position: relative; border-radius: 8px; }
-        .checked { background-color: #ffeb3b; border-color: #fbc02d; }
-        .checked::after { content: "✓"; font-size: 30px; color: #e91e63; position: absolute; font-weight: bold; }
-        #status { margin-top: 20px; font-weight: bold; color: #333; min-height: 1.5em; }
-        .loading { color: #666; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🚩 食べ歩きスタンプ帳</title>
+  <style>
+    :root { --primary: #ff6b6b; --success: #4caf50; --bg: #f8f9fa; }
+    body { font-family: sans-serif; background: var(--bg); margin: 0; padding: 20px; display: flex; justify-content: center; }
+    .container { width: 100%; max-width: 400px; background: white; border-radius: 15px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); padding: 20px; text-align: center; }
+    h1 { color: #333; font-size: 1.5rem; margin-bottom: 20px; }
+    .form-group { background: #fff3f3; padding: 20px; border-radius: 10px; border: 2px dashed var(--primary); margin-bottom: 20px; }
+    input { width: 80%; padding: 12px; font-size: 1.2rem; border: 2px solid #ddd; border-radius: 8px; text-align: center; margin-bottom: 10px; }
+    button { background: var(--primary); color: white; border: none; padding: 12px 25px; border-radius: 8px; font-weight: bold; cursor: pointer; width: 80%; }
+    .shop-list { text-align: left; margin-top: 20px; }
+    .shop-item { display: flex; justify-content: space-between; align-items: center; padding: 15px; border-bottom: 1px solid #eee; }
+    .shop-info { display: flex; flex-direction: column; }
+    .shop-name { font-weight: bold; color: #444; }
+    .shop-link { font-size: 0.8rem; color: #4285f4; text-decoration: none; }
+    .stamp { width: 40px; height: 40px; border-radius: 50%; border: 2px solid #eee; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; }
+    .stamp.active { border-color: var(--success); color: var(--success); background: #e8f5e9; }
+    .loading { color: #999; font-style: italic; }
+    .hidden { display: none; }
+  </style>
 </head>
 <body>
-    <h2>飲み歩き強化チェック</h2>
-    <div id="status">読み込み中...</div>
-    <div class="grid" id="stamp-grid"></div>
+  <div class="container">
+    <h1>🚩 食べ歩きスタンプ帳</h1>
+    <div id="auth-section" class="form-group hidden">
+      <p><b>4ケタの暗証番号</b>を入力してください<br><small>（初めての方は決めた番号を入力）</small></p>
+      <input type="tel" id="userIdInput" maxlength="4" placeholder="0000">
+      <button onclick="handleAuth()">参加・再開する</button>
+    </div>
+    <div id="main-section">
+      <div id="status-msg" class="loading">データを読み込み中...</div>
+      <div id="list-container" class="shop-list"></div>
+    </div>
+    <div style="margin-top:20px;">
+      <a href="https://www.google.com/maps" target="_blank" style="color:#666; font-size:0.9rem;">🗺 全体ルートを確認する</a>
+    </div>
+  </div>
 
-    <script>
-        // ★★★ここにあなたのGASのデプロイURLを貼り付けてください★★★
-        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzWVTFSBMK9AxckUC-VIEUtn-KHBqq8lvfbudFf2ePqdqgfaw1In_vj5LzNWCHJVuWo2A/exec";
+  <script>
+    // ★重要：あなたのGASのデプロイURLに書き換えてください
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzWVTFSBMK9AxckUC-VIEUtn-KHBqq8lvfbudFf2ePqdqgfaw1In_vj5LzNWCHJVuWo2A/exec";
 
-        const urlParams = new URLSearchParams(window.location.search);
-        const shopId = urlParams.get('shop'); // URLから ?shop=s01 を取得
+    // URLから shop=s01 などのパラメータを取得
+    const urlParams = new URLSearchParams(window.location.search);
+    const currentShopId = urlParams.get('shop'); 
+    let myId = localStorage.getItem('rally_user_id');
 
-        // ユーザー識別用のIDを作成（ブラウザに保存）
-        let userId = localStorage.getItem('stamp_user_id');
-        if (!userId) {
-            userId = 'U' + Math.random().toString(36).substring(2, 11);
-            localStorage.setItem('stamp_user_id', userId);
-        }
+    window.onload = () => {
+      if (!myId) {
+        document.getElementById('auth-section').classList.remove('hidden');
+        document.getElementById('status-msg').classList.add('hidden');
+      } else {
+        loadData();
+      }
+    };
 
-        // 初期表示：32個のマスを作る
-        const grid = document.getElementById('stamp-grid');
-        for (let i = 1; i <= 32; i++) {
-            const id = 's' + String(i).padStart(2, '0');
-            const div = document.createElement('div');
-            div.id = id;
-            div.className = 'stamp';
-            div.innerText = id;
-            grid.appendChild(div);
-        }
+    function handleAuth() {
+      const val = document.getElementById('userIdInput').value;
+      if (val.length === 4) {
+        myId = val;
+        localStorage.setItem('rally_user_id', myId);
+        document.getElementById('auth-section').classList.add('hidden');
+        document.getElementById('status-msg').classList.remove('hidden');
+        loadData();
+      } else {
+        alert("4ケタの数字を入力してください");
+      }
+    }
 
-        // データのやり取り（GASへ送信）
-        async function syncData() {
-            try {
-                const response = await fetch(GAS_WEB_APP_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        userId: userId,
-                        shopId: shopId // URLにパラメータがあれば送信
-                    })
-                });
-                const data = await response.json();
-                
-                // スタンプを反映
-                data.checkedShops.forEach(id => {
-                    const el = document.getElementById(id);
-                    if (el) el.classList.add('checked');
-                });
+    // fetchを使ってGASにデータを送る（google.script.runの代わり）
+    async function loadData() {
+      try {
+        const response = await fetch(GAS_API_URL, {
+          method: 'POST',
+          body: JSON.stringify({ userId: myId, shopId: currentShopId })
+        });
+        const data = await response.json();
+        render(data);
+      } catch (e) {
+        document.getElementById('status-msg').innerText = "接続エラー。GASの設定を確認してください。";
+        console.error(e);
+      }
+    }
 
-                if (shopId) {
-                    document.getElementById('status').innerText = shopId + " のスタンプを押しました！";
-                    // URLからパラメータを消してスッキリさせる（二重送信防止）
-                    window.history.replaceState({}, document.title, window.location.pathname);
-                } else {
-                    document.getElementById('status').innerText = "あなたのスタンプ状況です";
-                }
-            } catch (e) {
-                document.getElementById('status').innerText = "エラー: 接続できませんでした。";
-                console.error(e);
-            }
-        }
+    function render(data) {
+      document.getElementById('status-msg').innerText = "あなたのスタンプ状況";
+      const container = document.getElementById('list-container');
+      container.innerHTML = "";
 
-        syncData();
-    </script>
+      data.shops.forEach(shop => {
+        const isChecked = data.progress[shop.id];
+        const item = document.createElement('div');
+        item.className = 'shop-item';
+        item.innerHTML = `
+          <div class="shop-info">
+            <span class="shop-name">${shop.name}</span>
+            <a href="${shop.mapUrl}" class="shop-link" target="_blank">Googleマップで見る</a>
+          </div>
+          <div class="stamp ${isChecked ? 'active' : ''}">
+            ${isChecked ? '✓' : ''}
+          </div>
+        `;
+        container.appendChild(item);
+      });
+
+      // 打刻完了後はURLからshopパラメータを消す（再読み込み対策）
+      if(currentShopId) window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  </script>
 </body>
 </html>
